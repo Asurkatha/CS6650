@@ -1,0 +1,70 @@
+graph TB
+    subgraph Client["Client (Part 1 & Part 2)"]
+        WarmupPhase["Warmup Phase<br/>32 threads × 1000 msgs"]
+        MainPhase["Main Phase<br/>50 threads × 10k msgs each"]
+        MetricsCollector["Metrics Collector<br/>Latency, Throughput<br/>Per-message tracking"]
+    end
+
+    subgraph Network["Network - WebSocket"]
+        WS["WebSocket Connection<br/>ws://host:8080/chat/{roomId}"]
+    end
+
+    subgraph Server["Server"]
+        HealthEndpoint["Health Endpoint<br/>GET /health"]
+        WSEndpoint["WebSocket Endpoint<br/>ws://host:8080/chat/{roomId}"]
+        
+        subgraph MessageProcessing["Message Processing Pipeline"]
+            Validation["Validation<br/>userId, username,<br/>message, timestamp,<br/>messageType"]
+            ACKHandler["ACK Handler<br/>Send status response"]
+            RoomRouter["Room Router<br/>Route to room handler"]
+        end
+        
+        subgraph RoomManagement["Room Management"]
+            Room1["Room 1 Handler<br/>Multiple connections"]
+            Room2["Room 2 Handler<br/>Multiple connections"]
+            RoomN["Room N Handler<br/>Multiple connections"]
+        end
+        
+        subgraph Storage["Data Store"]
+            MessageLog["Message Log<br/>In-memory buffer"]
+        end
+    end
+
+    subgraph Output["Output & Analysis"]
+        MetricsCSV["metrics.csv<br/>timestamp, messageType,<br/>latencyMs, statusCode, roomId"]
+        ThroughputChart["throughput.png<br/>10-second buckets<br/>msgs/sec line chart"]
+        ConsoleMetrics["Console Summary<br/>Throughput, Latency,<br/>P95, P99, etc."]
+    end
+
+    WarmupPhase -->|Send JSON msgs| WS
+    MainPhase -->|Send JSON msgs| WS
+    WS -->|WebSocket frames| WSEndpoint
+    
+    WSEndpoint -->|Route message| Validation
+    Validation -->|Valid| RoomRouter
+    Validation -->|Invalid| ACKHandler
+    
+    RoomRouter -->|Distribute| Room1
+    RoomRouter -->|Distribute| Room2
+    RoomRouter -->|Distribute| RoomN
+    
+    Room1 -->|Store| MessageLog
+    Room2 -->|Store| MessageLog
+    RoomN -->|Store| MessageLog
+    
+    ACKHandler -->|Send ACK response| WS
+    WS -->|ACK + metrics| MetricsCollector
+    
+    MetricsCollector -->|Write| MetricsCSV
+    MetricsCollector -->|Calculate| ThroughputChart
+    MetricsCollector -->|Print| ConsoleMetrics
+    
+    HealthEndpoint -->|JSONstatus| Client
+
+    style Client fill:#e1f5ff
+    style Server fill:#f3e5f5
+    style MessageProcessing fill:#fff9c4
+    style RoomManagement fill:#fff9c4
+    style Network fill:#e0f2f1
+    style Output fill:#f1f8e9
+    style MetricsCollector fill:#ffe0b2
