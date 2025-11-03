@@ -8,8 +8,13 @@ package com.chatflow.server.model;
 public enum MessageType {
     TEXT, JOIN, LEAVE;
 
-    public static boolean isValid(String s) {
-        for (MessageType t : values()) if (t.name().equals(s)) return true;
-        return false;
+    public static boolean isValid(String t) {
+        if (t == null) return false;
+        try {
+            MessageType.valueOf(t);
+            return true;
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
     }
 }

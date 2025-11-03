@@ -1,121 +1,148 @@
 package com.chatflow.server.ws;
 
 import com.chatflow.server.model.ChatMessage;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParseException;
+import com.chatflow.server.metrics.MetricsTracker;
+import com.chatflow.server.mq.MessagePublisher;
+import com.chatflow.server.mq.QueueMessage;
+import com.chatflow.server.ws.MessageValidator;
+import com.google.gson.*;
 import org.java_websocket.WebSocket;
-import org.java_websocket.exceptions.WebsocketNotConnectedException;
 import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.server.WebSocketServer;
 
 import java.net.InetSocketAddress;
-import java.time.Instant;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-
 /**
- * WebSocket server endpoint for handling chat messages in different rooms.
- * Supports multiple chat rooms identified by roomId in the URL path.
- * Validates incoming messages and responds with status and server timestamp.
+ChatEndpoint - Handles WebSocket connections and message processing
+All messages are validated and published to RabbitMQ
+Implements error handling and connection management
  */
-public class ChatEndpoint extends WebSocketServer
-{
+public class ChatEndpoint extends WebSocketServer {
+
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
 
-    // roomId -> connections set (value is dummy Boolean to get a concurrent set)
-    private final Map<String, ConcurrentHashMap<WebSocket, Boolean>> rooms = new ConcurrentHashMap<>();
+    private final MessagePublisher publisher;
+    private final RoomManager roomManager;
+    private final String serverId;
+    private final Map<WebSocket, String> connectionRooms = new ConcurrentHashMap<>();
 
-    public ChatEndpoint(int port)
-    {
-        super(new InetSocketAddress("0.0.0.0",port));
-    }
-
-    private static String roomIdFrom(String resourceDescriptor)
-    {
-        // Expecting "/chat/{roomId}"
-        if (resourceDescriptor == null) return "default";
-        String[] parts = resourceDescriptor.split("/");
-        return (parts.length >= 3 && "chat".equals(parts[1]) && !parts[2].isBlank()) ? parts[2] : "default";
+    public ChatEndpoint(int port, MessagePublisher publisher, RoomManager roomManager, String serverId) {
+        super(new InetSocketAddress(port));
+        this.publisher = publisher;
+        this.roomManager = roomManager;
+        this.serverId = serverId;
     }
 
     @Override
-    public void onOpen(WebSocket conn, ClientHandshake handshake)
-    {
-        String roomId = roomIdFrom(handshake.getResourceDescriptor());
-        rooms.computeIfAbsent(roomId, k -> new ConcurrentHashMap<>()).put(conn, Boolean.TRUE);
-        System.out.printf("OPEN %s room=%s%n", conn.getRemoteSocketAddress(), roomId);
+    public void onOpen(WebSocket conn, ClientHandshake handshake) {
+        // Connection opened, waiting for first message with roomId
     }
 
     @Override
-    public void onClose(WebSocket conn, int code, String reason, boolean remote)
-    {
-        rooms.values().forEach(set -> set.remove(conn));
-        System.out.printf("CLOSE %s code=%d reason=%s%n", conn.getRemoteSocketAddress(), code, reason);
-    }
-    //helper to safely send a message if the connection is still open
-    private void safeSend(WebSocket conn, String payload)
-    {
-        if (conn != null && conn.isOpen())
-        {
-            try
-            {
-                conn.send(payload);
-            }
-            catch (WebsocketNotConnectedException ignored)
-            {
-                // peer closed between isOpen() check and send(); ignore
-            }
+    public void onClose(WebSocket conn, int code, String reason, boolean remote) {
+        String roomId = connectionRooms.remove(conn);
+        if (roomId != null) {
+            roomManager.removeAllSessionsForClient(conn);
         }
     }
+
     @Override
-    public void onMessage(WebSocket conn, String text)
-    {
-        try
-        {
-            ChatMessage msg = GSON.fromJson(text, ChatMessage.class);
-            String err = MessageValidator.validate(msg);
-            if (err != null)
-            {
-                safeSend(conn, error(err));
+    public void onMessage(WebSocket conn, String message) {
+        try {
+            JsonObject msg = JsonParser.parseString(message).getAsJsonObject();
+           
+            String valEr = MessageValidator.validate(msg);
+            if (!"clear".equals(valEr)) {
+                sendError(conn, valEr);
                 return;
             }
-            // minimal echo (status + server timestamp)
-            JsonObject resp = new JsonObject();
-            resp.addProperty("status", "OK");
-            resp.addProperty("serverTimestamp", Instant.now().toString());
-            safeSend(conn, GSON.toJson(resp));
-        }
-        catch (JsonParseException e)
-        {
-            safeSend(conn, error("Invalid JSON: " + e.getMessage()));
-        }
-        catch (Exception e)
-        {
-            // connection might already be closed;
-            System.err.println("onMessage exception: " + e);
+
+            String roomId = msg.has("roomId") ? msg.get("roomId").getAsString() : "1";
+            String userId = msg.has("userId") ? msg.get("userId").getAsString() : "unknown";
+            String username = msg.has("username") ? msg.get("username").getAsString() : "Guest";
+            String messageText = msg.has("message") ? msg.get("message").getAsString() : "";
+            long timestamp = msg.has("timestamp") ? msg.get("timestamp").getAsLong() : System.currentTimeMillis();
+            String messageType = msg.has("messageType") ? msg.get("messageType").getAsString() : "TEXT";
+
+            String clientIp = conn.getRemoteSocketAddress().getAddress().getHostAddress();
+            // Register connection on first message
+            if (!connectionRooms.containsKey(conn)) {
+                connectionRooms.put(conn, roomId);
+                roomManager.addSession(roomId, conn);
+            }
+
+            MetricsTracker.recordReceived(roomId);
+
+            // Create queue message
+            QueueMessage queueMsg = new QueueMessage(
+                    msg.has("messageId") ? msg.get("messageId").getAsString() : UUID.randomUUID().toString(),
+                    roomId,
+                    userId,
+                    username,
+                    messageText,
+                    String.valueOf(timestamp),
+                    messageType,
+                    serverId,
+                    clientIp
+            );
+
+            // Publish to RabbitMQ
+            try {
+                publisher.publish(queueMsg);
+            } catch (Exception publishError) {
+                String errorMsg = publishError.getMessage() != null
+                        ? publishError.getMessage()
+                        : publishError.getClass().getSimpleName();
+                System.out.println("Failed to publish to room " + roomId + ": " + errorMsg);
+            }
+
+        } catch (JsonSyntaxException e) {
+            sendError(conn, "Invalid JSON");
+        } catch (Exception e) {
+            System.out.println("onMessage error: " + e.getMessage());
         }
     }
+
+
     @Override
-    public void onError(WebSocket conn, Exception ex)
-    {
-        System.err.println("WS ERROR " + ex.getMessage());
+    public void onError(WebSocket conn, Exception ex) {
+        System.err.println("WebSocket error: " + ex.getMessage());
     }
 
     @Override
-    public void onStart()
-    {
-        System.out.println("ChatEndpoint started");
+    public void onStart() {
+        System.out.println("ChatEndpoint started on port " + getPort());
+        setConnectionLostTimeout(30);
     }
 
-    private String error(String msg)
-    {
-        JsonObject obj = new JsonObject();
-        obj.addProperty("status", "ERROR");
-        obj.addProperty("message", msg);
-        obj.addProperty("serverTimestamp", Instant.now().toString());
-        return GSON.toJson(obj);
+    private String getClientIp(WebSocket conn) {
+        try {
+            InetSocketAddress addr = conn.getRemoteSocketAddress();
+            if (addr != null) {
+                return addr.getAddress().getHostAddress();
+            }
+        } catch (Exception e) {
+            System.err.println("Failed to get client IP: " + e.getMessage());
+        }
+        return "unknown";
+    }
+
+    private void sendError(WebSocket conn, String message) {
+        try {
+            if (conn == null || !conn.isOpen()) {
+                return;
+            }
+            JsonObject error = new JsonObject();
+            error.addProperty("error", message);
+            conn.send(GSON.toJson(error));
+        } catch (Exception e) {
+        }
+    }
+
+    public RoomManager getRoomManager() {
+        return roomManager;
     }
 }

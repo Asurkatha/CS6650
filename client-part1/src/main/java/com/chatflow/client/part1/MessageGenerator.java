@@ -1,60 +1,103 @@
 package com.chatflow.client.part1;
 
 import com.google.gson.JsonObject;
-import java.time.Instant;
+
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Random;
-import java.util.concurrent.BlockingQueue;
+import java.util.UUID;
+
 /**
- * Generates random chat messages and puts them into a blocking queue.
- * Each message includes userId, username, message content, timestamp, and messageType.
- * Message types are distributed as 90% TEXT, 5% JOIN, and 5% LEAVE.
+ * Generates valid messages for all types
+ *
+ * Per Assignment 2 requirements:
+ * - Generates JOIN, TEXT, LEAVE messages for each room
+ * - username must be 3-20 ALPHANUMERIC characters (NO underscores, NO special chars)
+ * - roomId: 1-20
+ * - userId: unique per message
+ * - messageType: TEXT, JOIN, LEAVE
+ * - timestamp: milliseconds since epoch
  */
-class MessageGenerator implements Runnable {
-    private final BlockingQueue<String> out;
-    private final int total;
+
+class MessageGenerator {
+
     private final Random rnd = new Random();
-    private static final String[] POOL = makeMessagePool();
 
-    MessageGenerator(BlockingQueue<String> out, int total) {
-        this.out = out;
-        this.total = total;
+    private static final String[] POOL = {
+            "Hello", "How are you?", "Nice to meet you",
+            "Testing", "Ping", "Pong", "What's up?", "Good day",
+            "All set", "Ready", "Acknowledged", "Confirming", "Thanks",
+            "Cheers", "Let's go", "Checking in", "Quick note", "FYI", "Update",
+            "Done", "Hello room", "Streaming", "Latency test", "Throughput",
+            "Benchmark", "Warmup", "Client msg", "Server echo", "Random text",
+            "Lorem ipsum", "Edge case", "Retrying", "Backoff", "Reconnect",
+            "Stable", "OK", "Fine", "Yo", "Hey", "Hi", "Hola", "Bonjour",
+            "Namaste", "Konnichiwa", "Annyeong", "Guten Tag", "Ciao", "Hej"
+    };
+
+    private static final int ROOM_COUNT = 20;
+
+    /**
+     * Generate messages for all rooms
+     * Returns JSON strings with JOIN, TEXT, LEAVE messages
+     */
+    public List<String> generateMessages(int totalMessages) {
+        List<String> messages = new ArrayList<>();
+        if (totalMessages <= 0) {
+            return messages;
+        }
+        for (int room = 1; room <= ROOM_COUNT && messages.size() < totalMessages; room++) {
+            JsonObject joinMsg = createMessage(room, "JOIN", "");
+            messages.add(joinMsg.toString());
+        }
+        int remaining = totalMessages - messages.size();
+        if (remaining <= 0) {
+            return messages;
+        }
+        int leavesPossible = Math.min(ROOM_COUNT, remaining);
+        int textSlots = remaining - leavesPossible;
+        if (textSlots < 0) {
+            textSlots = 0;
+            leavesPossible = remaining;
+        }
+        for (int i = 0; i < textSlots && messages.size() < totalMessages; i++) {
+            int room = (i % ROOM_COUNT) + 1;
+            JsonObject textMsg = createMessage(room, "TEXT", getRandomMessage());
+            messages.add(textMsg.toString());
+        }
+        remaining = totalMessages - messages.size();
+        leavesPossible = Math.min(ROOM_COUNT, remaining);
+        for (int room = 1; room <= ROOM_COUNT && leavesPossible > 0 && messages.size() < totalMessages; room++) {
+            JsonObject leaveMsg = createMessage(room, "LEAVE", "");
+            messages.add(leaveMsg.toString());
+            leavesPossible--;
+        }
+        while (messages.size() < totalMessages) {
+            int room = (messages.size() % ROOM_COUNT) + 1;
+            JsonObject textMsg = createMessage(room, "TEXT", getRandomMessage());
+            messages.add(textMsg.toString());
+        }
+        return messages;
     }
 
-    //creats random messages and puts them in the out queue
-    @Override
-    public void run() {
-        try {
-            for (int i = 0; i < total; i++) {
-                int userId = 1 + rnd.nextInt(100000);
-                String username = "user" + userId;
-                String message = POOL[rnd.nextInt(POOL.length)];
-                String messageType = pickType();
+    private JsonObject createMessage(int room, String messageType, String text) {
+        JsonObject msg = new JsonObject();
 
-                JsonObject msg = new JsonObject();
-                msg.addProperty("userId", userId);
-                msg.addProperty("username", username);
-                msg.addProperty("message", message);
-                msg.addProperty("timestamp", Instant.now().toString());
-                msg.addProperty("messageType", messageType);
+        // Generate unique userId (just a number string)
+        int uniqueId = rnd.nextInt(100000);
 
-                out.put(msg.toString()); // JUST JSON
-            }
-        } catch (InterruptedException ignored) {}
+        msg.addProperty("messageId", UUID.randomUUID().toString());
+        msg.addProperty("roomId", String.valueOf(room));
+        msg.addProperty("userId", "user" + uniqueId);  
+        msg.addProperty("username", "user" + uniqueId);  
+        msg.addProperty("message", text);
+        msg.addProperty("messageType", messageType);
+        msg.addProperty("timestamp", System.currentTimeMillis());
+
+        return msg;
     }
 
-    private static String pickType() {
-        int x = (int) (Math.random() * 100);
-        if (x < 90) return "TEXT";
-        if (x < 95) return "JOIN";
-        return "LEAVE";
-    }
-
-    private static String[] makeMessagePool() {
-        String base = "Hello|How are you?|Nice to meet you|Testing|Ping|Pong|What's up?|Good day|All set|Ready|"
-                + "Acknowledged|Confirming|Thanks|Cheers|Let’s go|Checking in|Quick note|FYI|Update|Done|"
-                + "Hello room|Streaming|Latency test|Throughput|Benchmark|Warmup|Client msg|Server echo|"
-                + "Random text|Lorem ipsum|Edge case|Retrying|Backoff|Reconnect|Stable|OK|Fine|Yo|"
-                + "Hey|Hi|Hola|Bonjour|Namaste|Konnichiwa|Annyeong|Guten Tag|Ciao|Hej";
-        return base.split("\\|");
+    private String getRandomMessage() {
+        return POOL[rnd.nextInt(POOL.length)];
     }
 }

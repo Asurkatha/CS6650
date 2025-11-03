@@ -1,5 +1,7 @@
 package com.chatflow.client.part1;
 
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ServerHandshake;
 
@@ -9,44 +11,58 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.CountDownLatch;
+
+/**
+ * SenderWorker class
+ * - Sends messages from queue to server
+ * - Sends EXACTLY what comes from queue (JOIN/TEXT/LEAVE from generator)
+ * - On failure, retries the SAME message 
+ */
 
 class SenderWorker implements Runnable {
 
     enum Mode { FIXED_ROOM, RANDOM_ROOM_PER_MESSAGE }
 
+    private static final int DEFAULT_MAX_IN_FLIGHT =
+            Integer.getInteger("CLIENT_MAX_IN_FLIGHT", 100000);
+    private static volatile Semaphore IN_FLIGHT = new Semaphore(DEFAULT_MAX_IN_FLIGHT, true);
+
     private final String wsBase;
     private final BlockingQueue<String> queue;
-    private final int messagesToSend;
     private final Mode mode;
     private final int fixedRoom;
-
     private final AtomicLong sendsOk;
     private final AtomicLong sendFails;
     private final AtomicInteger totalConnections;
     private final AtomicInteger reconnections;
     private final AtomicLong acksOk;
-    private final java.util.concurrent.CountDownLatch allAcks; // may be null in warmup if you choose
-
+    private final CountDownLatch allAcks;
+    private final ConcurrentMap<String, String> pendingAcks;
+    private final AtomicLong connectionFailures;
+    private final AtomicLong retryAttempts;
     private final Random rnd = new Random();
     private final Map<Integer, SimpleClient> clients = new HashMap<>();
+    private final boolean countAsNewSend;
 
-    SenderWorker(String wsBase,
-                 BlockingQueue<String> queue,
-                 int messagesToSend,
-                 Mode mode,
-                 int fixedRoom,
-                 AtomicLong sendsOk,
-                 AtomicLong sendFails,
-                 AtomicInteger totalConnections,
-                 AtomicInteger reconnections,
-                 AtomicLong acksOk,                                  // NEW
-                 java.util.concurrent.CountDownLatch allAcks) {      // NEW
+    private static final ConcurrentLinkedQueue<SimpleClient> LIVE_CLIENTS = new ConcurrentLinkedQueue<>();
+
+    SenderWorker(String wsBase, BlockingQueue<String> queue,
+                 Mode mode, int fixedRoom, AtomicLong sendsOk, AtomicLong sendFails,
+                  AtomicInteger totalConnections, AtomicInteger reconnections,
+                  AtomicLong acksOk, CountDownLatch allAcks,
+                  ConcurrentMap<String, String> pendingAcks,
+                  AtomicLong connectionFailures,
+                  AtomicLong retryAttempts,
+                  boolean countAsNewSend) {
         this.wsBase = wsBase;
         this.queue = queue;
-        this.messagesToSend = messagesToSend;
         this.mode = mode;
         this.fixedRoom = fixedRoom;
         this.sendsOk = sendsOk;
@@ -55,64 +71,135 @@ class SenderWorker implements Runnable {
         this.reconnections = reconnections;
         this.acksOk = acksOk;
         this.allAcks = allAcks;
+        this.pendingAcks = pendingAcks;
+        this.connectionFailures = connectionFailures;
+        this.retryAttempts = retryAttempts;
+        this.countAsNewSend = countAsNewSend;
     }
 
     @Override
     public void run() {
-        int sent = 0;
         try {
-            while (sent < messagesToSend) {
-                String json = queue.poll(1, TimeUnit.SECONDS);
-                if (json == null) continue;
+            while (true) {
+                // Pull exactly one message from queue
+                String json = queue.poll(2, TimeUnit.SECONDS);
+                if (json == null) {
+                    if (queue.isEmpty()) {
+                        break;
+                    }
+                    continue;
+                }
 
+                // Parse message
+                JsonObject msg = JsonParser.parseString(json).getAsJsonObject();
+                String messageType = msg.get("messageType").getAsString();
+                String messageId = msg.get("messageId").getAsString();
+
+                // Determine room and ensure message carries the assignment
                 int room = (mode == Mode.FIXED_ROOM) ? fixedRoom : 1 + rnd.nextInt(20);
-                // check existing connection or create new one
+                msg.addProperty("roomId", String.valueOf(room));
+
+                // Acquire or create a connection for the room
                 SimpleClient client = clients.get(room);
+
                 if (client == null || !client.isOpen()) {
-                    if (client != null) try { client.closeBlocking(); } catch (Exception ignore) {}
+                    if (client != null) {
+                        try {
+                            if (client.isOpen()) {
+                                client.closeBlocking();
+                            }
+                        } catch (Exception ignore) {}
+                        LIVE_CLIENTS.remove(client);
+                    }
+
                     client = connect(room);
                     clients.put(room, client);
                 }
 
-                boolean ok = sendWithRetry(client, json, 5); //exponential backoff retries
-                if (ok) sendsOk.incrementAndGet(); else sendFails.incrementAndGet();
-
-                sent++;
-            }
-        } catch (InterruptedException ignored) {
-            // allow fast shutdown
-        } finally {
-            // Wait for global ACK latch to reach zero (or timeout) before closing sockets,
-            // so we don't kill in-flight ACKs.
-            if (allAcks != null) {
+                String payload = msg.toString();
+                IN_FLIGHT.acquire();
+                boolean ok = false;
                 try {
-                    // generous timeout for ACKs to arrive
-                    allAcks.await(120, java.util.concurrent.TimeUnit.SECONDS);
-                } catch (InterruptedException ignore) {}
+                    if (!pendingAcks.containsKey(messageId)) {
+                        IN_FLIGHT.release();
+                        continue;
+                    }
+                    ok = sendWithRetry(client, payload, 10);
+                } catch (InterruptedException e) {
+                    IN_FLIGHT.release();
+                    throw e;
+                }
+
+                if (ok) {
+                    if (countAsNewSend) {
+                        sendsOk.incrementAndGet();
+                    }
+                } else {
+                    sendFails.incrementAndGet();
+                    IN_FLIGHT.release();
+                    if (!queue.offer(payload)) {
+                        queue.put(payload);
+                    }
+                    continue;
+                }
             }
-            for (SimpleClient c : clients.values()) {
-                try { c.closeBlocking(); } catch (Exception ignore) {}
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            closeAllClients();
+        }
+    }
+ 
+    private void closeAllClients() {
+        for (SimpleClient c : clients.values()) {
+            closeClient(c);
+        }
+        clients.clear();
+    }
+
+    
+    private SimpleClient connect(int room) throws InterruptedException {
+        String url = wsBase + "/?roomId=" + room;
+
+        while (true) {
+            SimpleClient c = new SimpleClient(
+                    URI.create(url),
+                    acksOk,
+                    allAcks,
+                    pendingAcks
+            );
+            try {
+                c.setTcpNoDelay(true);
+                c.setConnectionLostTimeout(0);
+            } catch (Throwable ignore) {}
+
+            try {
+                c.connectBlocking();
+                totalConnections.incrementAndGet();
+                LIVE_CLIENTS.add(c);
+                return c;
+            } catch (InterruptedException e) {
+                throw e;
+            } catch (Exception ex) {
+                connectionFailures.incrementAndGet();
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw ie;
+                }
             }
         }
-
     }
 
-    // connect to a specific room, return connected client
-    private SimpleClient connect(int room) throws InterruptedException {
-        String url = wsBase + "/chat/" + room;
-        SimpleClient c = new SimpleClient(URI.create(url), acksOk, allAcks);
-        try {
-            c.setTcpNoDelay(true);
-            c.setConnectionLostTimeout(0); // disable client ping timer during load
-        } catch (Throwable ignore) {}
-        c.connectBlocking();
-        totalConnections.incrementAndGet();
-        return c;
-    }
-    // helper to send with retries and exponential backoff
+    /**
+     * Send message with retry logic
+     * On failure, retries the EXACT SAME message (not a new one)
+     */
     private boolean sendWithRetry(SimpleClient c, String json, int maxRetries)
             throws InterruptedException {
         int attempt = 0;
+
         while (attempt <= maxRetries) {
             try {
                 if (!c.isOpen()) {
@@ -121,41 +208,113 @@ class SenderWorker implements Runnable {
                 }
                 c.send(json);
                 return true;
-            } catch (Exception e) {
-                if (attempt == maxRetries) return false;
-                long sleepMs = Math.min(2000L, (long) Math.pow(2, attempt) * 50L);
+
+            } catch (NullPointerException e) {
+                if (attempt == maxRetries) {
+                    return false;
+                }
+
+                long sleepMs = Math.min(200L, attempt * 25L);
                 Thread.sleep(sleepMs);
+                retryAttempts.incrementAndGet();
+                attempt++;
+
+            } catch (Exception e) {
+                if (attempt == maxRetries) {
+                    return false;
+                }
+
+                long sleepMs = Math.min(1000L, (long) Math.pow(2, attempt) * 50L);
+                Thread.sleep(sleepMs);
+                retryAttempts.incrementAndGet();
                 attempt++;
             }
         }
+
         return false;
     }
 
-    // Simple WebSocket client that counts ACKs (echoes) from server
+    /**
+     * Simple WebSocket client
+     */
     static class SimpleClient extends WebSocketClient {
+
         private final AtomicLong acksOk;
-        private final java.util.concurrent.CountDownLatch allAcks;
+        private final CountDownLatch allAcks;
+        private final ConcurrentMap<String, String> pendingAcks;
 
         SimpleClient(URI serverUri,
                      AtomicLong acksOk,
-                     java.util.concurrent.CountDownLatch allAcks) {
+                     CountDownLatch allAcks,
+                     ConcurrentMap<String, String> pendingAcks) {
             super(serverUri);
             this.acksOk = acksOk;
             this.allAcks = allAcks;
+            this.pendingAcks = pendingAcks;
         }
 
-        @Override public void onOpen(ServerHandshake handsh) { /* no-op */ }
+        @Override public void onOpen(ServerHandshake handsh) {}
 
         @Override public void onMessage(String message) {
-            // Every echo/response from the server counts as an ACK
-            if (acksOk != null) acksOk.incrementAndGet();
-            if (allAcks != null) allAcks.countDown();
+            if (message == null) {
+                return;
+            }
+            try {
+                JsonObject obj = JsonParser.parseString(message).getAsJsonObject();
+                if (obj.has("messageId")) {
+                    String messageId = obj.get("messageId").getAsString();
+                    if (pendingAcks != null && pendingAcks.remove(messageId) != null) {
+                        if (acksOk != null) acksOk.incrementAndGet();
+                        if (allAcks != null) allAcks.countDown();
+                        releasePermit();
+                    }
+                }
+            } catch (Exception ignore) {
+            }
         }
 
-        @Override public void onMessage(ByteBuffer bytes) { /* ignore binary */ }
+        @Override public void onMessage(ByteBuffer bytes) {}
 
-        @Override public void onClose(int code, String reason, boolean remote) { /* no-op */ }
+        @Override public void onClose(int code, String reason, boolean remote) {
+            LIVE_CLIENTS.remove(this);
+        }
 
-        @Override public void onError(Exception ex) { /* optionally log */ }
+        @Override public void onError(Exception ex) {}
+    }
+
+    private static void releasePermit() {
+        IN_FLIGHT.release();
+    }
+
+    static void releasePermits(int count) {
+        for (int i = 0; i < count; i++) {
+            IN_FLIGHT.release();
+        }
+    }
+
+    static synchronized void configureMaxInFlight(int permits) 
+    {
+        int effectivePermits = Math.max(1, permits);
+        IN_FLIGHT = new Semaphore(effectivePermits, true);
+    }
+
+    private static void closeClient(SimpleClient client) {
+        if (client == null) {
+            return;
+        }
+        try {
+            if (client.isOpen()) {
+                client.closeBlocking();
+            } else {
+                client.close();
+            }
+        } catch (Exception ignore) { }
+    }
+
+    static void shutdownAllClients() {
+        SimpleClient client;
+        while ((client = LIVE_CLIENTS.poll()) != null) {
+            closeClient(client);
+        }
     }
 }

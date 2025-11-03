@@ -1,26 +1,103 @@
 package com.chatflow.server.ws;
 
-import com.chatflow.server.model.ChatMessage;
-import com.chatflow.server.model.MessageType;
-
-import java.time.Instant;
+import com.google.gson.JsonObject;
 
 /**
- * Validates incoming chat messages to ensure they meet required criteria.
- * Checks for null values, valid ranges, formats, and allowed types.
+ * ✅ FIXED: MessageValidator - Validates incoming messages against Assignment 2 requirements
+ *
+ * Per Assignment 2 spec:
+ * - username: 3-20 alphanumeric characters [A-Za-z0-9] ONLY
+ * - roomId: required, non-empty
+ * - userId: required, non-empty
+ * - messageType: TEXT, JOIN, or LEAVE
+ * - timestamp: required, valid long
+ * - message: required for TEXT, optional for JOIN/LEAVE
  */
+
 final class MessageValidator {
 
-    static String validate(ChatMessage m) {
-        if (m == null) return "Body is null";
-        if (m.userId == null || m.userId < 1 || m.userId > 100000) return "userId must be 1..100000";
-        if (m.username == null || !m.username.matches("^[A-Za-z0-9]{3,20}$")) return "username must be 3-20 alphanumeric";
-        if (m.message == null || m.message.length() < 1 || m.message.length() > 500) return "message must be 1..500 chars";
-        if (m.timestamp == null) return "timestamp missing";
-        try { Instant.parse(m.timestamp); } catch (Exception e) { return "timestamp must be ISO-8601"; }
-        if (m.messageType == null || !MessageType.isValid(m.messageType)) return "messageType must be TEXT|JOIN|LEAVE";
-        return null; // OK
+    /**
+     * Validate message format and content
+     * @return "clear" if valid, error message if invalid
+     */
+    static String validate(JsonObject msg) {
+        if (msg == null) {
+            return "Message is null";
+        }
+
+        // Validate roomId
+        if (!msg.has("roomId") || msg.get("roomId").getAsString().trim().isEmpty()) {
+            return "roomId is required";
+        }
+
+        // Validate userId
+        if (!msg.has("userId") || msg.get("userId").getAsString().trim().isEmpty()) {
+            return "userId is required";
+        }
+
+        // Validate username (3-20 alphanumeric characters)
+        if (!msg.has("username")) {
+            return "username is required";
+        }
+
+        String username = msg.get("username").getAsString();
+        if (username == null || username.isEmpty()) {
+            return "username cannot be empty";
+        }
+
+        if (!username.matches("^[A-Za-z0-9]{3,20}$")) {
+            return "username must be 3-20 alphanumeric characters (letters and numbers only)";
+        }
+
+        // Validate messageType
+        if (!msg.has("messageType") || msg.get("messageType").getAsString().trim().isEmpty()) {
+            return "messageType is required";
+        }
+
+        String messageType = msg.get("messageType").getAsString().toUpperCase();
+        if (messageType.equals("CONTROL")) {
+            if (!msg.has("control")) {
+                return "control command is required for CONTROL messages";
+            }
+            if (!msg.has("sessionId")) {
+                return "sessionId is required for CONTROL messages";
+            }
+            return "clear";
+        }
+
+        if (!messageType.equals("TEXT") && !messageType.equals("JOIN") && !messageType.equals("LEAVE")) {
+            return "messageType must be TEXT, JOIN, or LEAVE";
+        }
+
+        if (messageType.equals("TEXT")) {
+            if (!msg.has("message") || msg.get("message").getAsString().trim().isEmpty()) {
+                return "message content is required for TEXT messageType";
+            }
+
+            String messageContent = msg.get("message").getAsString();
+            if (messageContent.length() > 500) {
+                return "message cannot exceed 500 characters";
+            }
+        }
+        // JOIN and LEAVE messages don't require message content
+
+        // Validate timestamp
+        if (!msg.has("timestamp")) {
+            return "timestamp is required";
+        }
+
+        try {
+            long ts = msg.get("timestamp").getAsLong();
+            if (ts <= 0) {
+                return "timestamp must be a positive number";
+            }
+        } catch (Exception e) {
+            return "timestamp must be a valid number (milliseconds)";
+        }
+
+        return "clear";
     }
 
-    private MessageValidator() {}
+    private MessageValidator() {
+    }
 }

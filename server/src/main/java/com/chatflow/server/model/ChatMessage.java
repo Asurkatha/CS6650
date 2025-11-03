@@ -4,16 +4,18 @@ package com.chatflow.server.model;
  * Model class representing a chat message.
  * Contains user ID, username, message content, timestamp, and message type.
  */
-public class ChatMessage {
-    // Required by spec
-    public Integer userId;          // 1..100000
-    public String username;         // 3..20 alnum
-    public String message;          // 1..500
-    public String timestamp;        // ISO-8601
-    public String messageType;      // TEXT|JOIN|LEAVE
+public record ChatMessage(
+        String type,
+        String roomId,
+        String userId,      
+        String username,
+        String message,
+        Long timestamp,
+        String messageType
+) {
 
-    // no-args constructor for Gson
-    public ChatMessage(Integer userId, String username, String message, String timestamp, String messageType) {}
+    public ChatMessage {
+    }
 
     @Override
     public String toString() {
