@@ -2,7 +2,7 @@ package com.chatflow.server.mq;
 
 /**
  * Message sent from server to the message broker (and consumed by consumer).
- * Fields are public via record accessors: messageId(), roomId(), userId(), username(), message(), timestamp(), messageType(), serverId(), origin()
+ * Fields are public via record accessors: messageId(), roomId(), userId(), username(), message(), timestamp(), messageType(), serverId(), clientIp(), testId()
  */
 public record QueueMessage(
         String messageId,
@@ -13,6 +13,7 @@ public record QueueMessage(
         String timestamp,
         String messageType,
         String serverId,
-        String clientIp
+        String clientIp,
+        String testId  // Unique test identifier for filtering queries
 ) {
 }

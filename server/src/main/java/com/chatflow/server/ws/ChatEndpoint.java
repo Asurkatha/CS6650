@@ -11,14 +11,15 @@ import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.server.WebSocketServer;
 
 import java.net.InetSocketAddress;
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
-ChatEndpoint - Handles WebSocket connections and message processing
-All messages are validated and published to RabbitMQ
-Implements error handling and connection management
+ * Handles WebSocket connections and message processing.
+ * All messages are validated and published to RabbitMQ.
+ * Implements error handling and connection management.
  */
 public class ChatEndpoint extends WebSocketServer {
 
@@ -66,6 +67,7 @@ public class ChatEndpoint extends WebSocketServer {
             String messageText = msg.has("message") ? msg.get("message").getAsString() : "";
             long timestamp = msg.has("timestamp") ? msg.get("timestamp").getAsLong() : System.currentTimeMillis();
             String messageType = msg.has("messageType") ? msg.get("messageType").getAsString() : "TEXT";
+            String testId = msg.has("testId") ? msg.get("testId").getAsString() : "unknown-test";
 
             String clientIp = conn.getRemoteSocketAddress().getAddress().getHostAddress();
             // Register connection on first message
@@ -76,17 +78,20 @@ public class ChatEndpoint extends WebSocketServer {
 
             MetricsTracker.recordReceived(roomId);
 
-            // Create queue message
+            // Create queue message with ISO-8601 timestamp
+            String isoTimestamp = Instant.ofEpochMilli(timestamp).toString();
+
             QueueMessage queueMsg = new QueueMessage(
                     msg.has("messageId") ? msg.get("messageId").getAsString() : UUID.randomUUID().toString(),
                     roomId,
                     userId,
                     username,
                     messageText,
-                    String.valueOf(timestamp),
+                    isoTimestamp,
                     messageType,
                     serverId,
-                    clientIp
+                    clientIp,
+                    testId  // Include testId from client message
             );
 
             // Publish to RabbitMQ

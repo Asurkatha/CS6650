@@ -1,0 +1,231 @@
+================================================================================
+DynamoDB Table Schemas - ChatFlow Assignment 3
+================================================================================
+
+TABLE 1: Messages
+--------------------------------------------------------------------------------
+Description: Primary message storage with room-based partitioning
+Capacity Mode: On-Demand (auto-scaling)
+Estimated Size: ~2.5 GB per 500K messages
+
+Primary Key:
+  Partition Key: roomId (String)
+  Sort Key: msgTimestamp (String)
+
+Attributes:
+  - messageId: String (Unique identifier, UUID format)
+  - userId: String (Format: "user{number}")
+  - username: String (Display name)
+  - message: String (Message content)
+  - messageType: String (Values: TEXT, JOIN, LEAVE)
+  - serverId: String (Server instance identifier)
+  - clientIp: String (Client IP address)
+  - testId: String (Test run identifier, ISO timestamp)
+  - hourBucket: String (Format: "YYYY-MM-DDTHH", e.g. "2025-11-18T15")
+  - dayBucket: String (Format: "YYYY-MM-DD", e.g. "2025-11-18")
+
+Global Secondary Indexes:
+  GSI_UserMessages:
+    Partition Key: userId (String)
+    Sort Key: msgTimestamp (String)
+    Projection: ALL
+    Purpose: Query user message history across all rooms
+
+Sample Item:
+{
+  "roomId": "1",
+  "msgTimestamp": "2025-11-18T15:30:45.123Z#a1b2c3d4",
+  "messageId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "userId": "user42",
+  "username": "user42",
+  "message": "Hello room",
+  "messageType": "TEXT",
+  "serverId": "server-1",
+  "clientIp": "192.168.1.100",
+  "testId": "2025-11-18T14:00:00.000Z",
+  "hourBucket": "2025-11-18T15",
+  "dayBucket": "2025-11-18"
+}
+
+Access Patterns:
+  1. Get messages for room (partition key query)
+  2. Get user's messages (GSI query)
+  3. Fallback for active users count (scan with testId filter)
+
+
+TABLE 2: UserRoomStats
+--------------------------------------------------------------------------------
+Description: User participation tracking per room
+Capacity Mode: On-Demand (auto-scaling)
+
+Primary Key:
+  Partition Key: userId (String)
+  Sort Key: roomId (String)
+
+Attributes:
+  - lastActivityTimestamp: String (Epoch milliseconds as string)
+  - lastMessageId: String (Most recent message ID)
+  - messageCount: Number (Total messages, updated via ADD)
+  - testId: String (Test run identifier)
+
+Sample Item:
+{
+  "userId": "user42",
+  "roomId": "1",
+  "lastActivityTimestamp": "1700328645123",
+  "lastMessageId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "messageCount": 150,
+  "testId": "2025-11-18T14:00:00.000Z"
+}
+
+Access Patterns:
+  1. Get all rooms for user (partition key query)
+  2. Get user activity in specific room (item get)
+  3. Most active users (scan with testId filter, aggregate by userId)
+
+Update Operations:
+  - Atomic ADD for messageCount
+  - SET for lastActivityTimestamp, lastMessageId, testId
+
+
+
+TABLE 3: HourlyStats
+--------------------------------------------------------------------------------
+Description: Pre-aggregated hourly statistics (materialized view)
+Capacity Mode: On-Demand (auto-scaling)
+TTL: Enabled (7 days)
+
+Primary Key:
+  Partition Key: entityKey (String)
+  Sort Key: hourBucket (String)
+
+Attributes:
+  - statType: String (Values: GLOBAL, ROOM)
+  - entityId: String (ALL for global, roomId for room-specific)
+  - messageCount: Number (Total messages, updated via ADD)
+  - textMessages: Number (TEXT message count, updated via ADD)
+  - joinMessages: Number (JOIN message count, updated via ADD)
+  - leaveMessages: Number (LEAVE message count, updated via ADD)
+  - lastSeen: Number (Last update timestamp)
+  - testId: String (Test run identifier)
+  - ttl: Number (Unix timestamp for auto-deletion)
+
+Sample Items:
+{
+  "entityKey": "GLOBAL#ALL",
+  "hourBucket": "2025-11-18T15",
+  "statType": "GLOBAL",
+  "entityId": "ALL",
+  "messageCount": 50000,
+  "textMessages": 45000,
+  "joinMessages": 2500,
+  "leaveMessages": 2500,
+  "lastSeen": 1700328645123,
+  "testId": "2025-11-18T14:00:00.000Z",
+  "ttl": 1700932445
+}
+
+{
+  "entityKey": "ROOM#1",
+  "hourBucket": "2025-11-18T15",
+  "statType": "ROOM",
+  "entityId": "1",
+  "messageCount": 2500,
+  "textMessages": 2250,
+  "joinMessages": 125,
+  "leaveMessages": 125,
+  "lastSeen": 1700328645123,
+  "testId": "2025-11-18T14:00:00.000Z",
+  "ttl": 1700932445
+}
+
+Access Patterns:
+  1. Get global stats for hour (item get)
+  2. Get room stats for hour (query with entityKey prefix)
+  3. Messages per hour for testId (scan with filter)
+
+Update Operations:
+  - Atomic ADD for all counter fields
+  - SET for statType, entityId, lastSeen, ttl, testId
+
+
+
+========================
+      Index Summary
+========================
+
+Table: Messages
+  - Primary Index: (roomId, msgTimestamp)
+  - GSI_UserMessages: (userId, msgTimestamp)
+
+Table: UserRoomStats
+  - Primary Index: (userId, roomId)
+
+
+Table: HourlyStats
+  - Primary Index: (entityKey, hourBucket)
+
+
+========================
+Query Performance Targets
+========================
+
+Query                              | Target    | Actual (avg) | Table Used
+-----------------------------------|-----------|--------------|------------------
+Get messages for room              | < 100ms   | 15-30ms      | Messages
+Get user message history           | < 200ms   | 25-50ms      | Messages (GSI)
+Count active users                 | < 500ms   | 100-200ms    | UserActivityBuckets
+Get user rooms                     | < 50ms    | 10-20ms      | UserRoomStats
+Messages per hour                  |           | 50-100ms     | UserActivityBuckets
+Most active users (top 10)         |           | 100-150ms    | UserRoomStats
+Most active rooms (top 10)         |           | 100-150ms    | UserRoomStats
+User participation patterns        |           | 150-250ms    | UserRoomStats
+
+
+========================
+Storage Estimates
+========================
+
+Table                  | Items per 500K msgs | Item Size (avg) | Total Size
+-----------------------|---------------------|-----------------|------------
+Messages               | 500,000             | 500 bytes       | 250 MB
+UserRoomStats          | ~100,000            | 200 bytes       | 20 MB
+HourlyStats            | ~100                | 300 bytes       | 30 KB
+-----------------------|---------------------|-----------------|------------
+TOTAL                  | ~250,000            | -               | ~300 MB
+
+Note: GSI doubles Messages table storage (500 MB total for Messages + GSI)
+
+
+========================
+TTL Configuration
+========================
+
+60 minutes for All tables to auto-delete old data
+Reasoning: keeps storage costs low, sufficient for short-term analytics
+
+========================
+testId Implementation
+========================
+
+Purpose: Enable query isolation between test runs without time range filters
+
+Benefits:
+  1. Deterministic query results per test
+  2. Historical data preserved (no cleanup needed between tests)
+  3. Parallel test execution possible
+  4. Simpler query logic (no timestamp comparisons)
+
+Implementation:
+  - Generated at test start: Instant.now().toString()
+  - Format: "2025-11-18T14:00:00.123Z"
+  - Included in ALL tables as a filter attribute
+  - Included in aggregation keys for HourlyStats 
+Query Pattern:
+  - All queries accept testId parameter
+  - Filter expressions: "testId = :testId"
+  - Client automatically passes testId to /queries endpoint
+
+Alternative Considered:
+  - Time range queries (startTime, endTime)
+  - Rejected due to complexity and non-determinism

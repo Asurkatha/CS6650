@@ -9,14 +9,15 @@ import com.google.gson.GsonBuilder;
 import com.rabbitmq.client.*;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
+import com.chatflow.server.storage.DynamoDbBatchWriter;
 
 /**
-MessageConsumer class handles the consumption of messages from a RabbitMQ queue.
-It implements the Runnable interface and is used to process messages in a separate thread.
-It uses a deduplication cache to handle at-least-once delivery and implements retry logic for failed broadcasts.
-It also tracks in-flight messages for graceful shutdown and provides per-message metrics tracking.
+ * Handles consumption of messages from a RabbitMQ queue.
+ * Implements deduplication cache for at-least-once delivery and retry logic for failed broadcasts.
+ * Tracks in-flight messages for graceful shutdown and provides per-message metrics tracking.
  */
 public class MessageConsumer implements Runnable {
 
@@ -28,6 +29,7 @@ public class MessageConsumer implements Runnable {
     private final AtomicLong messagesProcessed;
     private volatile boolean running = true;
     private final CountDownLatch shutdownComplete = new CountDownLatch(1);
+    private static DynamoDbBatchWriter ddbBatchWriter; // Shared across all consumers
 
     // Deduplication cache
     private static final ConcurrentHashMap<String, Long> processedMessages = new ConcurrentHashMap<>();
@@ -53,6 +55,39 @@ public class MessageConsumer implements Runnable {
 
         // Start cache cleanup thread
         startDedupCacheCleanup();
+    }
+
+    /**
+     * Initialize the shared DynamoDB batch writer (call once before creating consumers)
+     */
+    public static void initializeDynamoDb(int batchSize, long flushIntervalMs, int writerThreads) {
+        if (ddbBatchWriter == null) {
+            synchronized (MessageConsumer.class) {
+                if (ddbBatchWriter == null) {
+                    ddbBatchWriter = new DynamoDbBatchWriter(batchSize, flushIntervalMs, writerThreads);
+                    System.out.println("[MessageConsumer] DynamoDB batch writer initialized");
+                }
+            }
+        }
+    }
+
+    /**
+     * Shutdown the shared DynamoDB batch writer (call during app shutdown)
+     */
+    public static void shutdownDynamoDb() {
+        if (ddbBatchWriter != null) {
+            ddbBatchWriter.shutdown();
+        }
+    }
+
+    /**
+     * Get tracked user IDs for query randomization
+     */
+    public static Set<String> getTrackedUserIds() {
+        if (ddbBatchWriter != null) {
+            return ddbBatchWriter.getTrackedUserIds();
+        }
+        return new HashSet<>();
     }
 
     @Override
@@ -141,6 +176,12 @@ public class MessageConsumer implements Runnable {
                 markAsProcessed(msg.messageId());
                 messagesProcessed.incrementAndGet();
                 MetricsTracker.recordBroadcast(msg.roomId(), recipientCount);
+
+                // Write to DynamoDB asynchronously (non-blocking)
+                if (ddbBatchWriter != null) {
+                    ddbBatchWriter.writeMessage(msg);
+                }
+
                 channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
 
                 long duration = (System.nanoTime() - startTime) / 1_000_000;

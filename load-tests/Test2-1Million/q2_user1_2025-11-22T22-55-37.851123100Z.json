@@ -1,0 +1,64 @@
+{
+  "messageCount": 5,
+  "query": "user-history",
+  "executionTimeSeconds": "0.040",
+  "messages": [
+    {
+      "messageId": "dff6f6cd-11d6-436c-b715-069523127b28",
+      "roomId": "2",
+      "userId": "user1",
+      "username": "user1",
+      "message": "",
+      "timestamp": "2025-11-22T22:55:38.037Z#dff6f6cd-11d6-436c-b715-069523127b28",
+      "messageType": "LEAVE",
+      "serverId": "server-bb383c06",
+      "clientIp": "172.31.28.25"
+    },
+    {
+      "messageId": "15dce3b4-ef71-4057-b409-75364b46a30b",
+      "roomId": "16",
+      "userId": "user1",
+      "username": "user1",
+      "message": "Hello room",
+      "timestamp": "2025-11-22T22:55:38.037Z#15dce3b4-ef71-4057-b409-75364b46a30b",
+      "messageType": "TEXT",
+      "serverId": "server-ef01bf30",
+      "clientIp": "172.31.28.25"
+    },
+    {
+      "messageId": "d4426ce6-918c-44c5-83e0-92abf99a9bc9",
+      "roomId": "9",
+      "userId": "user1",
+      "username": "user1",
+      "message": "Annyeong",
+      "timestamp": "2025-11-22T22:55:38.036Z#d4426ce6-918c-44c5-83e0-92abf99a9bc9",
+      "messageType": "TEXT",
+      "serverId": "server-ef01bf30",
+      "clientIp": "172.31.28.25"
+    },
+    {
+      "messageId": "c45e9d47-7666-44a7-8c3a-b99382149feb",
+      "roomId": "6",
+      "userId": "user1",
+      "username": "user1",
+      "message": "",
+      "timestamp": "2025-11-22T22:55:38.036Z#c45e9d47-7666-44a7-8c3a-b99382149feb",
+      "messageType": "JOIN",
+      "serverId": "server-a1cd56ed",
+      "clientIp": "172.31.28.25"
+    },
+    {
+      "messageId": "6d1bcca6-829d-41bc-9e03-7ee8693541f0",
+      "roomId": "4",
+      "userId": "user1",
+      "username": "user1",
+      "message": "Guten Tag",
+      "timestamp": "2025-11-22T22:55:38.036Z#6d1bcca6-829d-41bc-9e03-7ee8693541f0",
+      "messageType": "TEXT",
+      "serverId": "server-a1cd56ed",
+      "clientIp": "172.31.28.25"
+    }
+  ],
+  "testId": "2025-11-22T22:55:37.851123100Z",
+  "userId": "user1"
+}

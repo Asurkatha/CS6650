@@ -1,0 +1,58 @@
+======================================================================
+ENDURANCE TEST REPORT
+======================================================================
+
+Test ID: 2025-11-23T02:56:07.299173600Z
+Target Rate: 3,000 msg/s
+Duration: 30 minutes
+
+SEND PHASE:
+  Messages Sent: 5,400,000 / 5,400,000 (100.0%)
+  Send Duration: 30:00
+  Avg Throughput: 2999.9 msg/s
+  Target Achievement: 100.0%
+
+Wait time for ACKs: 120 seconds
+ACK PHASE:
+  ACKs Received: 5,399,936 / 5,400,000 (100.0%)
+  ACK Wait Time: 2:02
+  ACK Throughput: 2809.5 msg/s
+
+TOTAL:
+  Total Runtime: 32:02
+  Missing ACKs: 64
+  Send Failures: 0
+  Timeouts: 0
+======================================================================
+============================================================
+Fetching Query Results from Server
+============================================================
+
+[1/3] Fetching messages for room 9...
+? Saved: results/q1_room-9_2025-11-23T02-56-07.299173600Z.json
+
+[2/3] Fetching history for user1...
+? Saved: results/q2_user1_2025-11-23T02-56-07.299173600Z.json
+
+[3/3] Fetching analytics...
+? Query failed. Status: 504
+Response: <html>
+<head><title>504 Gateway Time-out</title></head>
+<body>
+<center><h1>504 Gateway Time-out</h1></center>
+</body>
+</html>
+
+
+============================================================
+? Query Results Saved Successfully!
+============================================================
+Location: ./results/
+Files:
+  - q1_room-9_2025-11-23T02-56-07.299173600Z.json
+  - q2_user1_2025-11-23T02-56-07.299173600Z.json
+============================================================
+- q3-8_analytics_2025-11-23T02-56-07.299173600Z.json -missing
+======================================================================
+Endurance test completed!
+======================================================================

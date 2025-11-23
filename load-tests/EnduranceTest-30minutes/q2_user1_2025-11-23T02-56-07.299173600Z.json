@@ -1,0 +1,64 @@
+{
+  "messageCount": 5,
+  "query": "user-history",
+  "executionTimeSeconds": "0.036",
+  "messages": [
+    {
+      "messageId": "cc968eed-dc95-4711-839c-9519369ee434",
+      "roomId": "17",
+      "userId": "user1",
+      "username": "user1",
+      "message": "",
+      "timestamp": "2025-11-23T02:56:07.495Z#cc968eed-dc95-4711-839c-9519369ee434",
+      "messageType": "LEAVE",
+      "serverId": "server-3e60258c",
+      "clientIp": "172.31.12.90"
+    },
+    {
+      "messageId": "988ad605-1611-475c-ac3b-133bb207d56b",
+      "roomId": "10",
+      "userId": "user1",
+      "username": "user1",
+      "message": "Let\u0027s go",
+      "timestamp": "2025-11-23T02:56:07.494Z#988ad605-1611-475c-ac3b-133bb207d56b",
+      "messageType": "TEXT",
+      "serverId": "server-05c2c818",
+      "clientIp": "172.31.12.90"
+    },
+    {
+      "messageId": "0f9622ec-d1e9-47f6-bd84-1956cef908fc",
+      "roomId": "6",
+      "userId": "user1",
+      "username": "user1",
+      "message": "Ping",
+      "timestamp": "2025-11-23T02:56:07.494Z#0f9622ec-d1e9-47f6-bd84-1956cef908fc",
+      "messageType": "TEXT",
+      "serverId": "server-e08099ee",
+      "clientIp": "172.31.12.90"
+    },
+    {
+      "messageId": "da87939c-4961-448b-aacf-d2640cae9f11",
+      "roomId": "9",
+      "userId": "user1",
+      "username": "user1",
+      "message": "Done",
+      "timestamp": "2025-11-23T02:56:07.493Z#da87939c-4961-448b-aacf-d2640cae9f11",
+      "messageType": "TEXT",
+      "serverId": "server-3e60258c",
+      "clientIp": "172.31.12.90"
+    },
+    {
+      "messageId": "3a41b043-b114-4d16-b3c4-3d2532688e71",
+      "roomId": "15",
+      "userId": "user1",
+      "username": "user1",
+      "message": "",
+      "timestamp": "2025-11-23T02:56:07.493Z#3a41b043-b114-4d16-b3c4-3d2532688e71",
+      "messageType": "JOIN",
+      "serverId": "server-61f1307f",
+      "clientIp": "172.31.12.90"
+    }
+  ],
+  "testId": "2025-11-23T02:56:07.299173600Z",
+  "userId": "user1"
+}

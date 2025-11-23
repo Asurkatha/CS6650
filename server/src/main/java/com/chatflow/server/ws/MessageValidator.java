@@ -3,21 +3,20 @@ package com.chatflow.server.ws;
 import com.google.gson.JsonObject;
 
 /**
- * ✅ FIXED: MessageValidator - Validates incoming messages against Assignment 2 requirements
+ * Validates incoming messages against requirements.
  *
- * Per Assignment 2 spec:
- * - username: 3-20 alphanumeric characters [A-Za-z0-9] ONLY
+ * Requirements:
+ * - username: 3-20 alphanumeric characters [A-Za-z0-9]
  * - roomId: required, non-empty
  * - userId: required, non-empty
  * - messageType: TEXT, JOIN, or LEAVE
  * - timestamp: required, valid long
  * - message: required for TEXT, optional for JOIN/LEAVE
  */
-
 final class MessageValidator {
 
     /**
-     * Validate message format and content
+     * Validates message format and content.
      * @return "clear" if valid, error message if invalid
      */
     static String validate(JsonObject msg) {
@@ -25,17 +24,14 @@ final class MessageValidator {
             return "Message is null";
         }
 
-        // Validate roomId
         if (!msg.has("roomId") || msg.get("roomId").getAsString().trim().isEmpty()) {
             return "roomId is required";
         }
 
-        // Validate userId
         if (!msg.has("userId") || msg.get("userId").getAsString().trim().isEmpty()) {
             return "userId is required";
         }
 
-        // Validate username (3-20 alphanumeric characters)
         if (!msg.has("username")) {
             return "username is required";
         }
@@ -49,7 +45,6 @@ final class MessageValidator {
             return "username must be 3-20 alphanumeric characters (letters and numbers only)";
         }
 
-        // Validate messageType
         if (!msg.has("messageType") || msg.get("messageType").getAsString().trim().isEmpty()) {
             return "messageType is required";
         }
@@ -79,9 +74,7 @@ final class MessageValidator {
                 return "message cannot exceed 500 characters";
             }
         }
-        // JOIN and LEAVE messages don't require message content
 
-        // Validate timestamp
         if (!msg.has("timestamp")) {
             return "timestamp is required";
         }

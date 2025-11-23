@@ -11,11 +11,9 @@ import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * RoomManager - Manages WebSocket connections and room assignments
- * Handles adding, removing, and broadcasting messages to rooms
- * Implements lock-free iteration for concurrent access
- * Implements metrics tracking for broadcast performance
- * Implements connection cleanup for disconnected clients
+ * Manages WebSocket connections and room assignments.
+ * Handles adding, removing, and broadcasting messages to rooms.
+ * Implements lock-free iteration for concurrent access and metrics tracking.
  */
 public class RoomManager {
 
@@ -23,16 +21,13 @@ public class RoomManager {
 
     private final Map<String, Set<WebSocket>> roomSessions = new ConcurrentHashMap<>();
 
-    // Metrics
     private final AtomicLong messagesBroadcast = new AtomicLong(0);
     private final AtomicLong broadcastFailures = new AtomicLong(0);
 
- 
     public void addSession(String roomId, WebSocket socket) {
         roomSessions.computeIfAbsent(roomId, k -> new CopyOnWriteArraySet<>()).add(socket);
     }
 
-  
     public void removeSession(String roomId, WebSocket socket) {
         Set<WebSocket> sessions = roomSessions.get(roomId);
         if (sessions != null) {
@@ -46,19 +41,14 @@ public class RoomManager {
         }
     }
 
-    /**
-     * Get the number of connections in a specific room
-     */
     public int getRoomSize(String roomId) {
         Set<WebSocket> sessions = roomSessions.get(roomId);
         return sessions != null ? sessions.size() : 0;
     }
 
-   // Broadcast a message to all clients in a specific room
     public int broadcastToRoom(QueueMessage msg) {
         Set<WebSocket> connections = roomSessions.get(msg.roomId());
 
-        // Handle empty rooms
         if (connections == null || connections.isEmpty()) {
             messagesBroadcast.incrementAndGet();
             return 0;
@@ -76,7 +66,6 @@ public class RoomManager {
                     connections.remove(socket);
                 }
             } else {
-                // Dead socket, remove it
                 connections.remove(socket);
             }
         }
@@ -90,16 +79,10 @@ public class RoomManager {
         return successCount;
     }
 
-    /**
-     * Get total connections across all rooms
-     */
     public int getTotalConnections() {
         return roomSessions.values().stream().mapToInt(Set::size).sum();
     }
 
-    /**
-     * Get total rooms with active connections
-     */
     public int getRoomCount() {
         return (int) roomSessions.values().stream()
                 .filter(set -> !set.isEmpty())

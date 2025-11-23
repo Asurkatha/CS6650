@@ -1,0 +1,107 @@
+{
+  "messageCount": 9,
+  "query": "user-history",
+  "messages": [
+    {
+      "messageId": "ac9335c0-d474-4967-9363-2c0906415869",
+      "roomId": "11",
+      "userId": "user18",
+      "username": "user18",
+      "message": "",
+      "timestamp": "2025-11-22T19:49:05.070Z#ac9335c0-d474-4967-9363-2c0906415869",
+      "messageType": "JOIN",
+      "serverId": "server-041bfb74",
+      "clientIp": "172.31.28.25"
+    },
+    {
+      "messageId": "ac9335c0-d474-4967-9363-2c0906415869",
+      "roomId": "17",
+      "userId": "user18",
+      "username": "user18",
+      "message": "",
+      "timestamp": "2025-11-22T19:49:05.070Z#ac9335c0-d474-4967-9363-2c0906415869",
+      "messageType": "JOIN",
+      "serverId": "server-33ec890b",
+      "clientIp": "172.31.28.25"
+    },
+    {
+      "messageId": "a4bd19df-c7cd-4ac2-9831-44d7c23ac1c3",
+      "roomId": "4",
+      "userId": "user18",
+      "username": "user18",
+      "message": "Throughput",
+      "timestamp": "2025-11-22T19:49:05.070Z#a4bd19df-c7cd-4ac2-9831-44d7c23ac1c3",
+      "messageType": "TEXT",
+      "serverId": "server-041bfb74",
+      "clientIp": "172.31.28.25"
+    },
+    {
+      "messageId": "a4bd19df-c7cd-4ac2-9831-44d7c23ac1c3",
+      "roomId": "9",
+      "userId": "user18",
+      "username": "user18",
+      "message": "Throughput",
+      "timestamp": "2025-11-22T19:49:05.070Z#a4bd19df-c7cd-4ac2-9831-44d7c23ac1c3",
+      "messageType": "TEXT",
+      "serverId": "server-33ec890b",
+      "clientIp": "172.31.28.25"
+    },
+    {
+      "messageId": "72f8e9c7-30d1-49d3-820a-acd13e8ebfd0",
+      "roomId": "6",
+      "userId": "user18",
+      "username": "user18",
+      "message": "",
+      "timestamp": "2025-11-22T19:49:05.070Z#72f8e9c7-30d1-49d3-820a-acd13e8ebfd0",
+      "messageType": "LEAVE",
+      "serverId": "server-33ec890b",
+      "clientIp": "172.31.28.25"
+    },
+    {
+      "messageId": "72f8e9c7-30d1-49d3-820a-acd13e8ebfd0",
+      "roomId": "19",
+      "userId": "user18",
+      "username": "user18",
+      "message": "",
+      "timestamp": "2025-11-22T19:49:05.070Z#72f8e9c7-30d1-49d3-820a-acd13e8ebfd0",
+      "messageType": "LEAVE",
+      "serverId": "server-077a2801",
+      "clientIp": "172.31.28.25"
+    },
+    {
+      "messageId": "5f083785-77f0-4424-bcc5-a629e4dd284d",
+      "roomId": "13",
+      "userId": "user18",
+      "username": "user18",
+      "message": "Benchmark",
+      "timestamp": "2025-11-22T19:49:05.070Z#5f083785-77f0-4424-bcc5-a629e4dd284d",
+      "messageType": "TEXT",
+      "serverId": "server-33ec890b",
+      "clientIp": "172.31.28.25"
+    },
+    {
+      "messageId": "4a42d747-7b21-4087-bed2-c63408c58d32",
+      "roomId": "18",
+      "userId": "user18",
+      "username": "user18",
+      "message": "Confirming",
+      "timestamp": "2025-11-22T19:49:05.070Z#4a42d747-7b21-4087-bed2-c63408c58d32",
+      "messageType": "TEXT",
+      "serverId": "server-077a2801",
+      "clientIp": "172.31.28.25"
+    },
+    {
+      "messageId": "4a42d747-7b21-4087-bed2-c63408c58d32",
+      "roomId": "19",
+      "userId": "user18",
+      "username": "user18",
+      "message": "Confirming",
+      "timestamp": "2025-11-22T19:49:05.070Z#4a42d747-7b21-4087-bed2-c63408c58d32",
+      "messageType": "TEXT",
+      "serverId": "server-077a2801",
+      "clientIp": "172.31.28.25"
+    }
+  ],
+  "testId": "2025-11-22T19:49:04.878100400Z",
+  "userId": "user18"
+}

@@ -1,6 +1,7 @@
 package com.chatflow.server.api;
 
 import com.rabbitmq.client.*;
+import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
@@ -54,6 +55,10 @@ public class HealthServer {
                 }
             }
         });
+    }
+
+    public void addContext(String path, HttpHandler handler) {
+        http.createContext(path, handler);
     }
 
     public void start() {

@@ -3,10 +3,13 @@ package com.chatflow.server;
 import com.chatflow.server.api.HealthServer;
 import com.chatflow.server.api.MonitorEndpoint;
 import com.chatflow.server.consumer.MessageConsumer;
+import com.chatflow.server.http.QueryHandler;
+import com.chatflow.server.http.ExportQueryHandler;
+import com.chatflow.server.http.QueryResultsHandler;
 import com.chatflow.server.metrics.MetricsTracker;
 import com.chatflow.server.metrics.QueueStatsTracker;
 import com.chatflow.server.mq.ChannelPool;
-import com.chatflow.server.mq.RabbitMQPublisher;
+import com.chatflow.server.mq.MessagePublisher;
 import com.chatflow.server.mq.QueueInitializer;
 import com.chatflow.server.ws.ChatEndpoint;
 import com.chatflow.server.ws.RoomManager;
@@ -14,6 +17,7 @@ import com.rabbitmq.client.AMQP;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -21,15 +25,15 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.IntStream;
 
 /**
-Main application class
-Handles server initialization and shutdown
-Configures RabbitMQ connections
-Initializes components
-Starts WebSocket server
-Starts health server
-Starts monitoring dashboard
-Starts consumer threads
-Starts metrics logger
+ * Main application class for the ChatFlow server.
+ *
+ * Responsibilities:
+ * - Initialize RabbitMQ connections and channel pool
+ * - Start WebSocket server for client connections
+ * - Start HTTP server for health checks and query endpoints
+ * - Initialize DynamoDB batch writer for message persistence
+ * - Start consumer threads for message processing
+ * - Handle graceful shutdown
  */
 public class App {
 
@@ -41,10 +45,10 @@ public class App {
 
     public static void main(String[] args) throws Exception {
         System.out.println("=".repeat(60));
-        System.out.println("Unified Chat Server - Assignment 2");
+        System.out.println("ChatFlow Server - Assignment 3");
         System.out.println("=".repeat(60));
 
-        // Configuration
+        // Configuration from system properties or defaults
         int wsPort = getIntProp("WS_PORT", 8080);
         int httpPort = getIntProp("HTTP_PORT", 8081);
         String rabbitHost = System.getProperty("RABBIT_HOST", "172.31.43.127");
@@ -53,14 +57,21 @@ public class App {
         String rabbitPass = System.getProperty("RABBIT_PASS", "SecurePassword123");
         int channelPoolSize = getIntProp("CHANNEL_POOL_SIZE", 200);
         int consumerThreadCount = getIntProp("CONSUMER_THREADS", 80);
-        int prefetchCount = getIntProp("PREFETCH_COUNT", 10000);
+        int prefetchCount = getIntProp("PREFETCH_COUNT", 1000);
         int queueMaxLength = getIntProp("QUEUE_MAX_LENGTH", 1000000);
-        boolean queueLazyMode = Boolean.parseBoolean(System.getProperty("QUEUE_LAZY_MODE", "false"));
+        boolean queueLazyMode = Boolean.parseBoolean(System.getProperty("QUEUE_LAZY_MODE", "true"));
         int publisherWorkers = getIntProp("PUBLISHER_WORKERS", 64);
         int publisherQueueCapacity = getIntProp("PUBLISHER_QUEUE_CAPACITY", 1000000);
         int publisherConfirmBatch = getIntProp("PUBLISHER_CONFIRM_BATCH", 100);
         String serverId = System.getProperty("SERVER_ID",
                 "server-" + UUID.randomUUID().toString().substring(0, 8));
+
+        // DynamoDB configuration - optimized for 5000 msg/s throughput
+        // At 5000 msg/s: 500 msgs per 100ms flush, split into batches of 500
+        boolean enableDynamoDB = Boolean.parseBoolean(System.getProperty("ENABLE_DYNAMODB", "true"));
+        int ddbBatchSize = getIntProp("DDB_BATCH_SIZE", 1000);
+        long ddbFlushIntervalMs = Long.parseLong(System.getProperty("DDB_FLUSH_INTERVAL", "150"));
+        int ddbWriterThreads = getIntProp("DDB_WRITER_THREADS", 64);
 
         System.out.println("Configuration:");
         System.out.println("  Server ID: " + serverId);
@@ -75,6 +86,12 @@ public class App {
         System.out.println("  Publisher Workers: " + publisherWorkers);
         System.out.println("  Publisher Queue Capacity: " + publisherQueueCapacity);
         System.out.println("  Publisher Confirm Batch: " + publisherConfirmBatch);
+        System.out.println("  DynamoDB Enabled: " + enableDynamoDB);
+        if (enableDynamoDB) {
+            System.out.println("  DynamoDB Batch Size: " + ddbBatchSize);
+            System.out.println("  DynamoDB Flush Interval: " + ddbFlushIntervalMs + "ms");
+            System.out.println("  DynamoDB Writer Threads: " + ddbWriterThreads);
+        }
 
         // Create RabbitMQ connections
         ConnectionFactory factory = new ConnectionFactory();
@@ -97,8 +114,10 @@ public class App {
         QueueStatsTracker queueStatsTracker = new QueueStatsTracker();
         QueueInitializer.initialize(channelPool, ROOM_COUNT, queueMaxLength, queueLazyMode);
         System.out.println("Queues initialized (maxLength=" + queueMaxLength + ", lazyMode=" + queueLazyMode + ")");
+
         queueMetricsThread = startQueueSampler(channelPool, queueStatsTracker);
-        RabbitMQPublisher publisher = new RabbitMQPublisher(
+
+        MessagePublisher publisher = new MessagePublisher(
                 channelPool, publisherWorkers, publisherQueueCapacity, publisherConfirmBatch);
         System.out.println("Publisher initialized with channel pool");
 
@@ -107,21 +126,38 @@ public class App {
         // Start WebSocket server
         ChatEndpoint chatServer = new ChatEndpoint(wsPort, publisher, roomManager, serverId);
         chatServer.start();
-        System.out.println(" WebSocket server started on port " + wsPort);
+        System.out.println("WebSocket server started on port " + wsPort);
 
-        // Start health server
+        // Start health server with query endpoints
         HealthServer healthServer = new HealthServer(httpPort);
+        healthServer.addContext("/queries", new QueryHandler());
+        healthServer.addContext("/export-queries", new ExportQueryHandler());
+
+        // Query results endpoints for client to fetch JSON
+        QueryResultsHandler queryResultsHandler = new QueryResultsHandler();
+        healthServer.addContext("/query/room-messages", queryResultsHandler);
+        healthServer.addContext("/query/user-history", queryResultsHandler);
+        healthServer.addContext("/query/analytics", queryResultsHandler);
         healthServer.start();
         System.out.println("Health check server started on port " + httpPort);
+        System.out.println("Query endpoint available at http://localhost:" + httpPort + "/queries");
+        System.out.println("Export endpoint available at http://localhost:" + httpPort + "/export-queries");
 
         // Start monitoring dashboard
-        MonitorEndpoint monitor = new MonitorEndpoint(8082, roomManager);
+        int monitorPort = getIntProp("MONITOR_PORT", 8083);
+        MonitorEndpoint monitor = new MonitorEndpoint(monitorPort, roomManager);
         monitor.start();
         boolean enableDashboardLogging = "true".equals(
                 System.getProperty("ENABLE_DASHBOARD_LOGGING", "true")
         );
         MonitorEndpoint.enableLogging(enableDashboardLogging);
-        System.out.println(" Monitoring dashboard on port 8082");
+        System.out.println("Monitoring dashboard on port " + monitorPort);
+
+        // Initialize DynamoDB batch writer
+        if (enableDynamoDB) {
+            MessageConsumer.initializeDynamoDb(ddbBatchSize, ddbFlushIntervalMs, ddbWriterThreads);
+            System.out.println("DynamoDB batch writer initialized");
+        }
 
         // Start consumer threads
         AtomicLong messagesProcessed = new AtomicLong(0);
@@ -137,62 +173,65 @@ public class App {
         // Start metrics logger
         Thread metricsThread = startMetricsLogger(roomManager, messagesProcessed, queueStatsTracker);
 
-        System.out.println("=".repeat(30));
+        System.out.println("=".repeat(60));
         System.out.println("Server ready!");
-        System.out.println("=".repeat(30));
+        System.out.println("=".repeat(60));
 
-        // ✅ GRACEFUL SHUTDOWN HOOK
+        // Graceful shutdown hook
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            System.out.println("\n" + "=".repeat(30));
+            System.out.println("\n" + "=".repeat(60));
             System.out.println("GRACEFUL SHUTDOWN INITIATED");
-            System.out.println("=".repeat(30));
+            System.out.println("=".repeat(60));
 
             try {
-                // Step 1: Stop accepting new WebSocket connections
+                // Stop accepting new WebSocket connections
                 System.out.println("[1/7] Stopping WebSocket server...");
                 chatServer.stop(1000);
-                System.out.println(" WebSocket server stopped");
+                System.out.println("WebSocket server stopped");
 
-                // Step 2: Stop health check (removes from ALB)
+                // Stop health check (removes from load balancer)
                 System.out.println("[2/7] Stopping health check...");
                 healthServer.stop();
-                System.out.println(" Health check stopped (ALB draining)");
+                System.out.println("Health check stopped");
 
-                // Step 3: Wait a bit for ALB to drain connections
+                // Wait for load balancer to drain connections
                 System.out.println("[3/7] Waiting for connection draining (5s)...");
-               // Thread.sleep(5000);
+                Thread.sleep(5000);
 
-                // Step 4: Stop all consumers (stops pulling new messages)
+                // Stop all consumers
                 System.out.println("[4/7] Stopping consumers...");
                 consumers.forEach(MessageConsumer::stop);
-                System.out.println(" Consumer stop signal sent");
+                System.out.println("Consumer stop signal sent");
 
-                // Step 5: Wait for all in-flight messages to be processed
+                // Wait for in-flight messages to be processed
                 System.out.println("[5/7] Waiting for in-flight messages...");
                 long shutdownStart = System.currentTimeMillis();
-                int totalConsumers = consumers.size();
                 int shutdownComplete = 0;
 
                 for (MessageConsumer consumer : consumers) {
-                    boolean completed = consumer.awaitShutdown(30000); // 30s per consumer
+                    boolean completed = consumer.awaitShutdown(30000);
                     if (completed) {
                         shutdownComplete++;
                     }
                 }
 
                 long shutdownDuration = System.currentTimeMillis() - shutdownStart;
-               
-                // Step 6: Close connections
-                System.out.println("[6/7] Closing connections...");
+                System.out.println("Consumers shutdown: " + shutdownComplete + "/" + consumers.size() +
+                        " (took " + shutdownDuration + "ms)");
+
+                // Shutdown DynamoDB writer
+                System.out.println("[6/7] Shutting down DynamoDB writer...");
+                MessageConsumer.shutdownDynamoDb();
+                System.out.println("DynamoDB writer shutdown complete");
+
+                // Close connections
+                System.out.println("[7/7] Closing connections...");
                 publisher.shutdown();
                 channelPool.close();
                 publisherConnection.close();
                 consumerConnection.close();
-                System.out.println(" All connections closed");
+                System.out.println("All connections closed");
 
-                // Step 7: Print final metrics
-                System.out.println("[7/7] Final metrics:");
-               
                 // Stop monitoring
                 monitor.stop();
                 metricsThread.interrupt();
@@ -200,9 +239,9 @@ public class App {
                     queueMetricsThread.interrupt();
                 }
 
-                System.out.println("=".repeat(30));
-                System.out.println("SHUTDOWN COMPLETE - No messages lost!");
-                System.out.println("=".repeat(30));
+                System.out.println("=".repeat(60));
+                System.out.println("SHUTDOWN COMPLETE");
+                System.out.println("=".repeat(60));
 
             } catch (Exception e) {
                 System.err.println("Error during shutdown: " + e.getMessage());
@@ -215,7 +254,7 @@ public class App {
     }
 
     /**
-     * Start consumer threads with proper tracking
+     * Start consumer threads distributed across rooms.
      */
     private static void startConsumers(Connection connection,
                                        RoomManager roomManager,
@@ -241,7 +280,7 @@ public class App {
             );
 
             Thread thread = new Thread(consumer, "Consumer-" + queueName + "-" + consumerNum);
-            thread.setDaemon(false); // NOT daemon - must complete work
+            thread.setDaemon(false);
             thread.start();
 
             consumers.add(consumer);
@@ -250,7 +289,7 @@ public class App {
     }
 
     /**
-     * Comprehensive metrics logger
+     * Start metrics logging thread that prints statistics every 5 seconds.
      */
     private static Thread startMetricsLogger(RoomManager roomManager,
                                              AtomicLong messagesProcessed,
@@ -266,16 +305,16 @@ public class App {
 
             while (!Thread.currentThread().isInterrupted()) {
                 try {
-                    Thread.sleep(5000); // Every 5 seconds
+                    Thread.sleep(5000);
 
                     long received = MetricsTracker.getTotalReceived();
-                    long published = RabbitMQPublisher.getPublishedCount();
+                    long published = MessagePublisher.getPublishedCount();
                     long consumed = messagesProcessed.get();
                     long broadcast = roomManager.getMessagesBroadcast();
                     MetricsTracker.MetricsSnapshot snapshot = MetricsTracker.getSnapshot();
                     QueueStatsTracker.QueueSnapshot queueSnapshot = queueStatsTracker.snapshot();
 
-                    // Calculate rates
+                    // Calculate rates (per second)
                     long recvRate = (received - lastReceived) / 5;
                     long pubRate = (published - lastPublished) / 5;
                     long consumeRate = (consumed - lastConsumed) / 5;
@@ -287,13 +326,13 @@ public class App {
                     long consumerLag = Math.max(0L, snapshot.totalPublished - snapshot.totalConsumed);
 
                     System.out.printf(
-                            "[METRICS] Recv: %d (%d/s) | Pub: %d (%d/s) | Consume: %d (%d/s) | Broadcast: %d (%d/s) " +
-                                    "| Confirmed: %d | Failures: %d (+%d/s) | Retries: %d (+%d/s) \n",
+                            "[METRICS] Recv: %d (%d/s) | Pub: %d (%d/s) | Consume: %d (%d/s) | Broadcast: %d (%d/s) | " +
+                                    "Lag: %d | Dup: %d (+%d/s) | Fail: %d (+%d/s) | Retry: %d (+%d/s) | " +
+                                    "Queue: %d (avg: %d, peak: %d) | Conn: %d | Rooms: %d%n",
                             received, recvRate,
                             published, pubRate,
                             consumed, consumeRate,
                             broadcast, broadcastRate,
-                            snapshot.totalConfirmed,
                             consumerLag,
                             snapshot.totalDuplicates, duplicateRate,
                             snapshot.totalFailures, failureRate,
@@ -304,7 +343,6 @@ public class App {
                             roomManager.getTotalConnections(),
                             roomManager.getRoomCount()
                     );
-
 
                     lastReceived = received;
                     lastPublished = published;
@@ -324,6 +362,9 @@ public class App {
         return metricsThread;
     }
 
+    /**
+     * Start background thread that samples RabbitMQ queue depths.
+     */
     private static Thread startQueueSampler(ChannelPool channelPool,
                                             QueueStatsTracker tracker) {
         Thread sampler = new Thread(() -> {
@@ -340,7 +381,7 @@ public class App {
                     Thread.currentThread().interrupt();
                     break;
                 } catch (Exception e) {
-                    System.err.println("[Metrics] Queue depth sample failed: " + e.getMessage());
+                    System.err.println("[QueueSampler] Failed to sample queue depth: " + e.getMessage());
                 } finally {
                     if (channel != null) {
                         channelPool.returnChannel(channel);
@@ -360,6 +401,9 @@ public class App {
         return sampler;
     }
 
+    /**
+     * Parse integer property with fallback to default.
+     */
     private static int getIntProp(String key, int def) {
         try {
             return Integer.parseInt(System.getProperty(key, String.valueOf(def)));

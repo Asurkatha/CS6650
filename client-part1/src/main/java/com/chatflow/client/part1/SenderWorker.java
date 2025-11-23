@@ -261,6 +261,15 @@ class SenderWorker implements Runnable {
             }
             try {
                 JsonObject obj = JsonParser.parseString(message).getAsJsonObject();
+
+                // Check if this is a query result (has queryId)
+                if (obj.has("queryId")) {
+                    System.out.println("\n=== QUERY RESULT ===");
+                    System.out.println(message);
+                    System.out.println("===================\n");
+                }
+
+                // Process ACK messages
                 if (obj.has("messageId")) {
                     String messageId = obj.get("messageId").getAsString();
                     if (pendingAcks != null && pendingAcks.remove(messageId) != null) {

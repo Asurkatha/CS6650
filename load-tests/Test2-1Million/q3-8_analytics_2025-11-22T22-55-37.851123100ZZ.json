@@ -1,0 +1,153 @@
+{
+  "query": "analytics",
+  "testId": "2025-11-22T22-55-37.851123100Z",
+  "q3_activeUsers": 100000,
+  "q4_userId": "user52156",
+  "q4_roomsParticipated": [
+    {
+      "roomId": "11",
+      "lastMessage": ""
+    },
+    {
+      "roomId": "15",
+      "lastMessage": "Stable"
+    },
+    {
+      "roomId": "17",
+      "lastMessage": ""
+    },
+    {
+      "roomId": "8",
+      "lastMessage": "Update"
+    }
+  ],
+  "q5_topUsers": [
+    {
+      "userId": "user52149",
+      "messageCount": 17,
+      "firstSeen": "2025-11-22T22:55:03.046Z",
+      "lastSeen": "2025-11-22T22:55:03.046Z"
+    },
+    {
+      "userId": "user76117",
+      "messageCount": 17,
+      "firstSeen": "2025-11-22T22:55:03.426Z",
+      "lastSeen": "2025-11-22T22:55:03.426Z"
+    },
+    {
+      "userId": "user5479",
+      "messageCount": 17,
+      "firstSeen": "2025-11-22T22:55:02.038Z",
+      "lastSeen": "2025-11-22T22:55:02.038Z"
+    },
+    {
+      "userId": "user52147",
+      "messageCount": 17,
+      "firstSeen": "2025-11-22T22:55:03.046Z",
+      "lastSeen": "2025-11-22T22:55:03.046Z"
+    },
+    {
+      "userId": "user52148",
+      "messageCount": 17,
+      "firstSeen": "2025-11-22T22:55:03.046Z",
+      "lastSeen": "2025-11-22T22:55:03.046Z"
+    },
+    {
+      "userId": "user76119",
+      "messageCount": 17,
+      "firstSeen": "2025-11-22T22:55:03.426Z",
+      "lastSeen": "2025-11-22T22:55:03.426Z"
+    },
+    {
+      "userId": "user5477",
+      "messageCount": 17,
+      "firstSeen": "2025-11-22T22:55:02.038Z",
+      "lastSeen": "2025-11-22T22:55:02.038Z"
+    },
+    {
+      "userId": "user52145",
+      "messageCount": 17,
+      "firstSeen": "2025-11-22T22:55:03.046Z",
+      "lastSeen": "2025-11-22T22:55:03.046Z"
+    },
+    {
+      "userId": "user76112",
+      "messageCount": 17,
+      "firstSeen": "2025-11-22T22:55:03.426Z",
+      "lastSeen": "2025-11-22T22:55:03.426Z"
+    },
+    {
+      "userId": "user27189",
+      "messageCount": 17,
+      "firstSeen": "2025-11-22T22:55:02.631Z",
+      "lastSeen": "2025-11-22T22:55:02.631Z"
+    }
+  ],
+  "q6_topRooms": [
+    {
+      "roomId": "18",
+      "messageCount": 51622,
+      "uniqueUsers": 19618
+    },
+    {
+      "roomId": "20",
+      "messageCount": 51355,
+      "uniqueUsers": 19343
+    },
+    {
+      "roomId": "19",
+      "messageCount": 51285,
+      "uniqueUsers": 19287
+    },
+    {
+      "roomId": "13",
+      "messageCount": 51263,
+      "uniqueUsers": 19239
+    },
+    {
+      "roomId": "9",
+      "messageCount": 51124,
+      "uniqueUsers": 19072
+    },
+    {
+      "roomId": "17",
+      "messageCount": 51091,
+      "uniqueUsers": 19086
+    },
+    {
+      "roomId": "11",
+      "messageCount": 51070,
+      "uniqueUsers": 19097
+    },
+    {
+      "roomId": "7",
+      "messageCount": 50890,
+      "uniqueUsers": 18952
+    },
+    {
+      "roomId": "14",
+      "messageCount": 50888,
+      "uniqueUsers": 18945
+    },
+    {
+      "roomId": "12",
+      "messageCount": 50869,
+      "uniqueUsers": 18791
+    }
+  ],
+  "q7_messagesPerMinute": {
+    "2025-11-23T022:55": 521739
+  },
+  "q8_messagesSecond": {
+    "2025-11-23T022:55:37": 8699
+  },
+  "queryExecutionTimes": {
+    "q3_activeUsersTime": "0.588",
+    "q4_userRoomsTime": "0.052",
+    "q5_topUsersTime": "2.953",
+    "q6_topRoomsTime": "2.802",
+    "q7_messagesPerHourTime": "0.005",
+    "q8_messagesPerDayTime": "0.001"
+  },
+  "totalExecutionTimeSeconds": "8.355"
+}
